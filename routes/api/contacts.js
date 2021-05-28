@@ -6,14 +6,8 @@ const {
   addContact,
   removeContact,
   updateContact,
-} = require('../../model/contacts')
-const Joi = require('joi')
-
-const createUserSchema = Joi.object({
-  name: Joi.string().required(),
-  email: Joi.string().email().required(),
-  phone: Joi.number().required(),
-})
+  updateContactStatus,
+} = require('../../service/contacts')
 
 router.get('/', async (_, res) => {
   listContacts().then(data => res.status(200).send(data))
@@ -21,45 +15,48 @@ router.get('/', async (_, res) => {
 
 router.get('/:contactId', async (req, res) => {
   const id = req.params.contactId
-  getContactById(id).then(data =>
-    data.length
-      ? res.status(200).send(data)
-      : res.status(404).json({ message: 'Not Found' }),
-  )
+  getContactById(id)
+    .then(data => res.status(200).send(data))
+    .catch(e => res.status(404).json({ message: 'Not Found' }))
 })
 
-router.post('/', async (req, res, next) => {
-  const { value, error } = createUserSchema.validate(req.body)
-  if (error) {
-    res.status(400).json({ message: error.message })
-    return
-  }
-  const { name, email, phone } = value
-  addContact(name, email, phone).then(data => res.status(201).send(data))
+router.post('/', async (req, res) => {
+  const { name, email, phone, favorite } = req.body
+  addContact(name, email, phone, favorite)
+    .then(data => res.status(201).send(data))
+    .catch(e => res.status(400).json({ message: e.message }))
 })
 
 router.delete('/:contactId', async (req, res) => {
   const id = req.params.contactId
-  removeContact(id).then(data =>
-    // data => console.log(data),
-    data !== undefined
-      ? res.status(200).json({ message: 'Contact deleted' })
-      : res.status(404).json({ message: 'Not Found' }),
-  )
+  removeContact(id)
+    .then(() => res.status(200).json({ message: 'Contact deleted' }))
+    .catch(() => res.status(404).json({ message: 'Not Found' }))
 })
 
-router.patch('/:contactId', async (req, res) => {
-  const { value, error } = createUserSchema.validate(req.body)
+router.put('/:contactId', async (req, res) => {
   const id = req.params.contactId
-  if (error) {
-    return res.status(400).json({ message: error.message })
+  try {
+    const response = await updateContact(id, req.body)
+    res.status(200).send(response)
+  } catch (error) {
+    res.status(400).json({ message: `Not Found  ${error.message}` })
   }
+})
 
-  updateContact(id, value).then(data =>
-    data !== undefined
-      ? res.status(200).send(data)
-      : res.status(404).json({ message: 'Not Found' }),
-  )
+router.patch('/:contactId/favorite', async (req, res) => {
+  const id = req.params.contactId
+  const favorite = Object.prototype.hasOwnProperty.call(req.body, 'favorite')
+
+  if (!favorite) {
+    return res.status(400).json({ message: 'missing field favorite' })
+  }
+  try {
+    const response = await updateContactStatus(id, req.body)
+    res.status(200).send(response)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
 })
 
 module.exports = router
