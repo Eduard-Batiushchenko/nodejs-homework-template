@@ -12,8 +12,17 @@ const setUpToken = (id, token) => {
   return User.findOneAndUpdate({ _id: id }, { token: token }, { new: true })
 }
 
+const updateAvatarUrl = (id, newAvatar) => {
+  return User.findOneAndUpdate(
+    { _id: id },
+    { avatarURL: newAvatar },
+    { new: true },
+  )
+}
+
 module.exports = {
   findUser,
   setUpToken,
   findUserById,
+  updateAvatarUrl,
 }

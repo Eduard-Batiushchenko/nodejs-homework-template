@@ -2,11 +2,29 @@ const express = require('express')
 const router = express.Router()
 const Joi = require('joi')
 const bCrypt = require('bcryptjs')
+const { join, extname } = require('path')
 const jwt = require('jsonwebtoken')
-const { findUser, setUpToken } = require('../../service/users')
+const { findUser, setUpToken, updateAvatarUrl } = require('../../service/users')
+const multer = require('multer')
 const User = require('../../service/schema/users-schema')
-const { checkTokenMiddleware } = require('../../service/users.middleware')
+const {
+  checkTokenMiddleware,
+  compressImage,
+} = require('../../service/users.middleware')
+const gravatar = require('gravatar')
 
+const TEMP_FILES_DIR = join(process.cwd(), 'tmp')
+
+const diskStorage = multer.diskStorage({
+  destination: TEMP_FILES_DIR,
+  filename: (req, file, cb) => {
+    const ext = extname(file.originalname)
+    const fileName = Date.now() + ext
+    cb(null, fileName)
+  },
+})
+
+const upload = multer({ storage: diskStorage })
 const schema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string()
@@ -33,7 +51,12 @@ router.post('/signup', async (req, res, next) => {
       password,
       await bCrypt.genSalt(Number(process.env.PASSWORD_SALT)),
     )
-    const newUser = new User({ email, password: hashedPassword, subscription })
+    const newUser = new User({
+      email,
+      password: hashedPassword,
+      subscription,
+      avatarURL: gravatar.url(email),
+    })
     await newUser.save()
     res.status(201).json({
       user: {
@@ -111,5 +134,24 @@ router.post('/current', checkTokenMiddleware, async (req, res, next) => {
     },
   })
 })
+
+router.patch(
+  '/avatars',
+  upload.single('avatar'),
+  checkTokenMiddleware,
+  compressImage,
+  async (req, res, next) => {
+    const id = req.userId
+    try {
+      const newAvatarUrl = req.newUrl
+      await updateAvatarUrl(id, newAvatarUrl)
+      res.json({
+        avatarURL: newAvatarUrl,
+      })
+    } catch (error) {
+      return res.status(400).json({ message: error.message })
+    }
+  },
+)
 
 module.exports = router
