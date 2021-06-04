@@ -19,10 +19,14 @@ const updateAvatarUrl = (id, newAvatar) => {
     { new: true },
   )
 }
+const findUserByToken = verificationToken => {
+  return User.findOne({ verifyToken: verificationToken })
+}
 
 module.exports = {
   findUser,
   setUpToken,
   findUserById,
   updateAvatarUrl,
+  findUserByToken,
 }

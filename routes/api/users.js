@@ -3,8 +3,14 @@ const router = express.Router()
 const Joi = require('joi')
 const bCrypt = require('bcryptjs')
 const { join, extname } = require('path')
+const { v1 } = require('uuid')
 const jwt = require('jsonwebtoken')
-const { findUser, setUpToken, updateAvatarUrl } = require('../../service/users')
+const {
+  findUser,
+  setUpToken,
+  updateAvatarUrl,
+  findUserByToken,
+} = require('../../service/users')
 const multer = require('multer')
 const User = require('../../service/schema/users-schema')
 const {
@@ -12,6 +18,7 @@ const {
   compressImage,
 } = require('../../service/users.middleware')
 const gravatar = require('gravatar')
+const sendEmail = require('../../service/schema/helpers/email')
 
 const TEMP_FILES_DIR = join(process.cwd(), 'tmp')
 
@@ -35,6 +42,10 @@ const schema = Joi.object({
   subscription: Joi.string(),
 })
 
+const verifySchema = Joi.object({
+  email: Joi.string().email().required(),
+})
+
 router.post('/signup', async (req, res, next) => {
   const { value, error } = schema.validate(req.body)
   const { email, password, subscription = 'starter' } = value
@@ -51,13 +62,16 @@ router.post('/signup', async (req, res, next) => {
       password,
       await bCrypt.genSalt(Number(process.env.PASSWORD_SALT)),
     )
+    const verifyToken = v1()
     const newUser = new User({
       email,
       password: hashedPassword,
       subscription,
       avatarURL: gravatar.url(email),
+      verifyToken,
     })
     await newUser.save()
+    await sendEmail(verifyToken, email)
     res.status(201).json({
       user: {
         email,
@@ -82,6 +96,11 @@ router.post('/login', async (req, res, next) => {
 
     if (!user || !checkPassword) {
       return res.status(401).json({ message: 'Email or password is wrong' })
+    }
+    if (!user.verify) {
+      return res
+        .status(403)
+        .json({ message: 'You need to confirm ur email before login' })
     }
     const payload = {
       id: user.id,
@@ -153,5 +172,36 @@ router.patch(
     }
   },
 )
+
+router.get('/verify/:verificationToken', async (req, res, next) => {
+  const { verificationToken } = req.params
+  const user = await findUserByToken(verificationToken)
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' })
+  }
+  await user.updateOne({ verify: true, verifyToken: null })
+  res.status(200).json({ message: 'Verification successful' })
+})
+
+router.post('/verify', async (req, res, next) => {
+  const { error, value } = verifySchema.validate(req.body)
+  if (error) {
+    return res.status(400).json({ message: 'missing required field email' })
+  }
+  try {
+    const { email } = value
+    const user = await findUser(email)
+    if (user.verify) {
+      return res
+        .status(400)
+        .json({ message: 'Verification has already been passed' })
+    }
+    const { verifyToken } = user
+    sendEmail(verifyToken, email)
+    res.status(200).json({ message: 'Verification email sent' })
+  } catch (error) {
+    res.status(404).json({ message: error })
+  }
+})
 
 module.exports = router
